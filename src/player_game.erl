@@ -34,26 +34,32 @@ score(Pid,Pins) ->
 %%----------------------------------------------------------------- 
 
 init(PlayerName) ->
-    loop({PlayerName,1,1,normal,normal,10,0}).
+    loop({PlayerName,1,1,false,normal,normal,10,0}).
 
 %%----------------------------------------------------------------- 
 %% Loop to continuously receive messages about player performance
 %%----------------------------------------------------------------- 
 
-compute_addition(Pins, LastShot, PriorToLastShot) ->
-    (1 +
-    case LastShot of       
-	strike -> 1;
-	spare -> 1;
-	_ -> 0
-    end +
-    case PriorToLastShot of
-	strike -> 1;
-        _ -> 0
-    end
+compute_addition(Pins, LastShot, PriorToLastShot, BonusShot) ->
+    (
+      case BonusShot of
+	  false -> 1;
+	  true -> 0
+      end
+      +
+      case LastShot of       
+	  strike -> 1;
+	  spare -> 1;
+	  _ -> 0
+      end 
+      +
+      case PriorToLastShot of
+	  strike -> 1;
+	  _ -> 0
+      end
     ) * Pins.
 
-compute_status(Pins, Frame, Shot, MaxPins, LastShot) ->    
+compute_status(Pins, Frame, Shot, BonusShot, MaxPins, LastShot) ->    
     case Frame of
 	% Special treatment required for last (tenth) frame when the player
 	% can under specific conditions have 3 shots
@@ -68,20 +74,28 @@ compute_status(Pins, Frame, Shot, MaxPins, LastShot) ->
 			    % Cannot goto next frame since this is the last frame
 			    NextFrame = 10,
 			    NextShot = 2,
-			    NextMaxPins = 10;
+			    NextMaxPins = 10,
+			    NextBonusShot = true;
 			% Toppled some or zero pins
 			true ->
 			    ThisShotStatus = normal,
 			    NextFrame = 10,
 			    NextShot = 2,
-			    NextMaxPins = 10 - Pins
+			    NextMaxPins = 10 - Pins,
+			    NextBonusShot = false
 		    end;
 		% Second shot
 		2 ->
 		    if
 			% Toppled all the pins
 			Pins =:= MaxPins ->
-			    ThisShotStatus = spare,
+			    case BonusShot of 
+				false ->ThisShotStatus = spare;
+				% if this is a bonus shot, then no subsequent
+				% bonuses can accrue so it should not be marked
+				% as a spare
+				true -> ThisShotStatus = normal
+			    end,
 			    % Have to award one more shot in this frame since
 			    % player had a spare
 			    NextFrame = 10,
@@ -102,17 +116,22 @@ compute_status(Pins, Frame, Shot, MaxPins, LastShot) ->
 			    NextFrame = none,
 			    NextShot = none,
 			    NextMaxPins = none
-		    end;
+		    end,
+		    NextBonusShot = true;
 		% Third shot (under scenarios of strike or spare)
 		3 ->
 		    % the status is irrelevant so do not bother to compute
 		    ThisShotStatus = irrelevant,
 		    NextFrame = none,
 		    NextShot = none,
-		    NextMaxPins = none
+		    NextMaxPins = none,
+		    % This is also actually an irrelevant setting
+		    NextBonusShot = true
 	    end;
 	% For all but the last frame
 	_ ->
+	    % Bonus shots are applicable only in the last frame .. so always false
+	    NextBonusShot = false,
 	    case Shot of
 		1 ->
 		    if 
@@ -141,9 +160,9 @@ compute_status(Pins, Frame, Shot, MaxPins, LastShot) ->
 			end
 	    end
     end,
-    {NextFrame, NextShot, ThisShotStatus, NextMaxPins}.
+    {NextFrame, NextShot, ThisShotStatus, NextMaxPins, NextBonusShot}.
     
-loop({PlayerName, Frame, Shot, LastShot, PriorToLastShot, MaxPins, Score}=State) ->
+loop({PlayerName, Frame, Shot, BonusShot, LastShot, PriorToLastShot, MaxPins, Score}=State) ->
     % The next line is only temporary. Will be removed later
     io:format("Looping. State:~p.~n",[State]),
     receive
@@ -153,15 +172,16 @@ loop({PlayerName, Frame, Shot, LastShot, PriorToLastShot, MaxPins, Score}=State)
 	    ok;
 	% Handle score pins message
 	{From, {pins, Pins}} when Pins >= 0 andalso Pins =< MaxPins ->
-	    Addition = compute_addition(Pins, LastShot, PriorToLastShot),
+	    Addition = compute_addition(Pins, LastShot, PriorToLastShot,BonusShot),
 	    % Compute the addition to the score
             NextScore = Score + Addition,
 	    % Compute ShotStatus, NextFrame, NextShot, NextMaxPins
-	    {NextFrame, NextShot, ThisShotStatus, NextMaxPins} =
-		compute_status(Pins, Frame, Shot, MaxPins, LastShot),
+	    {NextFrame, NextShot, ThisShotStatus, NextMaxPins, NextBonusShot} =
+		compute_status(Pins, Frame, Shot, BonusShot, MaxPins, LastShot),
 	    NextState = {PlayerName,
 			 NextFrame,
 			 NextShot,
+			 NextBonusShot,
 			 ThisShotStatus,
 			 LastShot,
 			 NextMaxPins,
