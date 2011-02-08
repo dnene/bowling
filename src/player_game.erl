@@ -24,8 +24,8 @@ stop(Pid) ->
 %% API to add score to player game
 %%----------------------------------------------------------------- 
 
-score(Pid,Points) ->
-    Pid ! {self(), {points, Points}},
+score(Pid,Pins) ->
+    Pid ! {self(), {pins, Pins}},
     ok.
 
 
@@ -34,49 +34,150 @@ score(Pid,Points) ->
 %%----------------------------------------------------------------- 
 
 init(PlayerName) ->
-    loop(PlayerName,0,{false, false}).
+    loop({PlayerName,1,1,normal,normal,10,0}).
 
 %%----------------------------------------------------------------- 
 %% Loop to continuously receive messages about player performance
 %%----------------------------------------------------------------- 
 
-loop(PlayerName, Score, {LastStrike, _PriorToLastStrike}=Strike) ->
+compute_addition(Pins, LastShot, PriorToLastShot) ->
+    (1 +
+    case LastShot of       
+	strike -> 1;
+	spare -> 1;
+	_ -> 0
+    end +
+    case PriorToLastShot of
+	strike -> 1;
+        _ -> 0
+    end
+    ) * Pins.
+
+compute_status(Pins, Frame, Shot, MaxPins, LastShot) ->    
+    case Frame of
+	% Special treatment required for last (tenth) frame when the player
+	% can under specific conditions have 3 shots
+	10 -> 
+	    case Shot of
+		% First shot
+		1 ->
+		    if
+			% Toppled all the pins
+			Pins =:= MaxPins ->
+			    ThisShotStatus = strike,
+			    % Cannot goto next frame since this is the last frame
+			    NextFrame = 10,
+			    NextShot = 2,
+			    NextMaxPins = 10;
+			% Toppled some or zero pins
+			true ->
+			    ThisShotStatus = normal,
+			    NextFrame = 10,
+			    NextShot = 2,
+			    NextMaxPins = 10 - Pins
+		    end;
+		% Second shot
+		2 ->
+		    if
+			% Toppled all the pins
+			Pins =:= MaxPins ->
+			    ThisShotStatus = spare,
+			    % Have to award one more shot in this frame since
+			    % player had a spare
+			    NextFrame = 10,
+			    NextShot = 3,
+			    NextMaxPins = 10;
+			% Toppled some or zero pins but first shot was a strike
+			LastShot =:= strike ->
+			    ThisShotStatus = normal,
+			    % Have to award one more shot in this frame since
+			    % player had a strike earlier
+			    NextFrame = 10,
+			    NextShot = 3,
+			    NextMaxPins = MaxPins - Pins;
+			% Toppled some or zero pins and first shot was not a strike
+			true ->
+			    ThisShotStatus = normal,
+			    % GAME OVER
+			    NextFrame = none,
+			    NextShot = none,
+			    NextMaxPins = none
+		    end;
+		% Third shot (under scenarios of strike or spare)
+		3 ->
+		    % the status is irrelevant so do not bother to compute
+		    ThisShotStatus = irrelevant,
+		    NextFrame = none,
+		    NextShot = none,
+		    NextMaxPins = none
+	    end;
+	% For all but the last frame
+	_ ->
+	    case Shot of
+		1 ->
+		    if 
+			Pins =:= MaxPins ->
+			    % Strike - toppled all the pins
+			    ThisShotStatus = strike,
+			    % No more shots in this frame - advance to next
+			    NextFrame = Frame + 1,
+			    NextShot = 1,
+			    NextMaxPins = 10;
+			true ->
+			    ThisShotStatus = normal,
+			    NextFrame = Frame,
+			    NextShot = 2,
+			    NextMaxPins = 10 - Pins
+		    end;
+		2 ->
+		    NextFrame = Frame + 1,
+		    NextShot = 1,
+		    % Since the frame is being advanced, pins go back to 10
+		    NextMaxPins = 10,
+		    ThisShotStatus = 
+			case Pins of
+			    MaxPins -> spare;
+			    _ -> normal
+			end
+	    end
+    end,
+    {NextFrame, NextShot, ThisShotStatus, NextMaxPins}.
+    
+loop({PlayerName, Frame, Shot, LastShot, PriorToLastShot, MaxPins, Score}=State) ->
     % The next line is only temporary. Will be removed later
-    io:format("Looping. Player:~p current score:~p, pending: ~p~n",
-	      [PlayerName, Score, Strike]),
+    io:format("Looping. State:~p.~n",[State]),
     receive
 	% Handle stop message if received
 	{From, stop} ->
             From ! {message, {PlayerName, {status, stopped}, {score, Score}}},
 	    ok;
-
-	% Handle score points message
-	{From, {points, Points}} ->
-	    if 
-		% valid points are only between 0 and 10
-		Points >= 0 andalso Points =< 10 ->
-		    % Addition to the scores depend upon pending strikes also
-		    Addition = 
-			case Strike of
-			    {true, true} -> Points * 3;
-                            {true, false} -> Points * 2;
-			    {false, true} -> Points * 2;
-			    {false, false} -> Points
-			end,
-                    NextScore = Score + Addition,
-		    % Decrement pending for the next loop if it is greater than zero, since
-		    % we have accounted for it in Addition above
-		    From ! 
-			{message, {PlayerName, 
-				   {scored, Points}, 
-				   {added, Addition},  
-				   {score, NextScore},
-				   {pending, {Points =:=10, LastStrike}}}},
-		    loop(PlayerName,NextScore, {Points =:= 10, LastStrike});
-		true ->
-		    % this is an invalid input. So just ignore it
-		    From ! {message, {PlayerName, {ignored_score, Points}, {score, Score}, {pending, Strike}}},
-		    loop(PlayerName, Score, Strike)
-	    end
+	% Handle score pins message
+	{From, {pins, Pins}} when Pins >= 0 andalso Pins =< MaxPins ->
+	    Addition = compute_addition(Pins, LastShot, PriorToLastShot),
+	    % Compute the addition to the score
+            NextScore = Score + Addition,
+	    % Compute ShotStatus, NextFrame, NextShot, NextMaxPins
+	    {NextFrame, NextShot, ThisShotStatus, NextMaxPins} =
+		compute_status(Pins, Frame, Shot, MaxPins, LastShot),
+	    NextState = {PlayerName,
+			 NextFrame,
+			 NextShot,
+			 ThisShotStatus,
+			 LastShot,
+			 NextMaxPins,
+			 NextScore},
+	    % Send Message to controller
+	    From ! {message, PlayerName, {scored, Pins, Addition}, NextState},
+	    loop(NextState);
+	{From, {pins, Pins}} ->
+	    % this is an invalid input. So just ignore it
+	    From ! {message, {ignored_score, Pins}, State},
+	    loop(State);
+	{From, UnknownMessage} ->
+	    From ! {message, {ignored_message, UnknownMessage}, State},
+	    loop(State);
+	UnknownMessage ->
+	    io:format("Unknown message. ignoring. ~n~p~n",[UnknownMessage]),
+	    loop(State)
     end.
 
