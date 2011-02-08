@@ -1,5 +1,5 @@
 -module(player_game).
--export([start/1,stop/1,init/1]).
+-export([start/1,stop/1,score/2,init/1]).
 
 -author('Dhananjay Nene').
 
@@ -21,6 +21,15 @@ stop(Pid) ->
     ok.
 
 %%----------------------------------------------------------------- 
+%% API to add score to player game
+%%----------------------------------------------------------------- 
+
+score(Pid,Points) ->
+    Pid ! {self(), {points, Points}},
+    ok.
+
+
+%%----------------------------------------------------------------- 
 %% Initialisation of process to keep track of player performance
 %%----------------------------------------------------------------- 
 
@@ -33,8 +42,17 @@ init(PlayerName) ->
 
 loop(PlayerName, Score) ->
     receive
-	{_From, stop} ->
-	    io:format("Thank you ~p for playing. Your current score is ~p. Goodbye!~n",[PlayerName, Score]),
-	    ok
+	{From, stop} ->
+            From ! {message, {PlayerName, {status, stopped}, {score, Score}}},
+	    ok;
+	{From, {points, Points}} ->
+	    if 
+		Points =< 10 ->
+		    From ! {message, {PlayerName, {scored, Points}, {score, Score + Points}}},
+		    loop(PlayerName,Score + Points);
+		true ->
+		    From ! {message, {PlayerName, {ignored_score, Points}, {score, Score}}},
+		    loop(PlayerName, Score)
+	    end
     end.
 
