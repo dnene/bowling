@@ -3,17 +3,7 @@
 
 -author('Dhananjay Nene').
 
--record(game_state, 
-	{
-	  player_name,
-	  frame,
-	  shot,
-	  bonus_shot,
-	  last_shot,
-	  prior_to_last_shot,
-	  max_pins,
-	  score
-	}).
+-include("../include/game_state.hrl").
 
 %%----------------------------------------------------------------- 
 %% Function to start the game for a particular player
@@ -206,8 +196,6 @@ compute_status(State, Pins, NextScore) ->
     end.
     
 loop(State) ->
-    % The next line is only temporary. Will be removed later
-    io:format("Looping. State:~p.~n",[State]),
     receive
 	% Handle stop message if received
 	{From, stop} ->
