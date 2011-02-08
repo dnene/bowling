@@ -3,6 +3,17 @@
 
 -author('Dhananjay Nene').
 
+-record(game_state, 
+	{
+	  player_name,
+	  frame,
+	  shot,
+	  bonus_shot,
+	  last_shot,
+	  prior_to_last_shot,
+	  max_pins,
+	  score
+	}).
 
 %%----------------------------------------------------------------- 
 %% Function to start the game for a particular player
@@ -34,7 +45,15 @@ score(Pid,Pins) ->
 %%----------------------------------------------------------------- 
 
 init(PlayerName) ->
-    loop({PlayerName,1,1,false,normal,normal,10,0}).
+    loop(#game_state{
+	   player_name        = PlayerName,
+	   frame              = 1,
+	   shot               = 1,
+	   bonus_shot         = false,
+	   last_shot          = normal,
+	   prior_to_last_shot = normal,
+	   max_pins           = 10,
+           score              =0}).
 
 %%----------------------------------------------------------------- 
 %% Loop to continuously receive messages about player performance
@@ -59,37 +78,34 @@ compute_addition(Pins, LastShot, PriorToLastShot, BonusShot) ->
       end
     ) * Pins.
 
-compute_status(Pins, Frame, Shot, BonusShot, MaxPins, LastShot) ->    
-    case Frame of
+compute_status(State, Pins, NextScore) ->    
+    case State#game_state.frame of
 	% Special treatment required for last (tenth) frame when the player
 	% can under specific conditions have 3 shots
 	10 -> 
-	    case Shot of
+	    case State#game_state.shot of
 		% First shot
 		1 ->
 		    if
 			% Toppled all the pins
-			Pins =:= MaxPins ->
-			    ThisShotStatus = strike,
-			    % Cannot goto next frame since this is the last frame
-			    NextFrame = 10,
-			    NextShot = 2,
-			    NextMaxPins = 10,
-			    NextBonusShot = true;
+			Pins =:= State#game_state.max_pins ->
+			    State#game_state{
+			      shot = 2, bonus_shot = true, last_shot = strike, 
+			      prior_to_last_shot = State#game_state.last_shot, 
+			      max_pins = 10, score = NextScore};
 			% Toppled some or zero pins
 			true ->
-			    ThisShotStatus = normal,
-			    NextFrame = 10,
-			    NextShot = 2,
-			    NextMaxPins = 10 - Pins,
-			    NextBonusShot = false
+			    State#game_state{
+			      shot = 2, last_shot = normal, 
+			      prior_to_last_shot = State#game_state.last_shot, 
+			      max_pins = 10 - Pins, score = NextScore}
 		    end;
 		% Second shot
 		2 ->
 		    if
 			% Toppled all the pins
-			Pins =:= MaxPins ->
-			    case BonusShot of 
+			Pins =:= State#game_state.max_pins ->
+			    case State#game_state.bonus_shot of 
 				false ->ThisShotStatus = spare;
 				% if this is a bonus shot, then no subsequent
 				% bonuses can accrue so it should not be marked
@@ -98,97 +114,118 @@ compute_status(Pins, Frame, Shot, BonusShot, MaxPins, LastShot) ->
 			    end,
 			    % Have to award one more shot in this frame since
 			    % player had a spare
-			    NextFrame = 10,
-			    NextShot = 3,
-			    NextMaxPins = 10;
+			    State#game_state{
+			      shot = 3, bonus_shot = true, 
+			      last_shot = ThisShotStatus, 
+			      prior_to_last_shot = State#game_state.last_shot, 
+			      max_pins = 10, score = NextScore};
 			% Toppled some or zero pins but first shot was a strike
-			LastShot =:= strike ->
-			    ThisShotStatus = normal,
+			State#game_state.last_shot =:= strike ->
 			    % Have to award one more shot in this frame since
 			    % player had a strike earlier
-			    NextFrame = 10,
-			    NextShot = 3,
-			    NextMaxPins = MaxPins - Pins;
+			    State#game_state{
+			      shot = 3, bonus_shot = true, 
+			      last_shot = normal, 
+			      prior_to_last_shot = State#game_state.last_shot, 
+			      max_pins = State#game_state.max_pins - Pins, 
+			      score = NextScore};
 			% Toppled some or zero pins and first shot was not a strike
 			true ->
-			    ThisShotStatus = normal,
-			    % GAME OVER
-			    NextFrame = none,
-			    NextShot = none,
-			    NextMaxPins = none
-		    end,
-		    NextBonusShot = true;
+			    {game_over, 
+			     State#game_state{
+			       frame = none,
+			       shot = none,
+			       bonus_shot = none,
+			       last_shot = none,
+			       prior_to_last_shot = none,
+			       max_pins = none,
+			       score = NextScore
+			      }}
+		    end;
 		% Third shot (under scenarios of strike or spare)
 		3 ->
-		    % the status is irrelevant so do not bother to compute
-		    ThisShotStatus = irrelevant,
-		    NextFrame = none,
-		    NextShot = none,
-		    NextMaxPins = none,
-		    % This is also actually an irrelevant setting
-		    NextBonusShot = true
+		    {game_over, 
+		     State#game_state{
+		       frame = none,
+		       shot = none,
+		       bonus_shot = none,
+		       last_shot = none,
+		       prior_to_last_shot = none,
+		       max_pins = none,
+		       score = NextScore
+		      }}
 	    end;
 	% For all but the last frame
 	_ ->
 	    % Bonus shots are applicable only in the last frame .. so always false
-	    NextBonusShot = false,
-	    case Shot of
+	    case State#game_state.shot of
 		1 ->
 		    if 
-			Pins =:= MaxPins ->
+			Pins =:= State#game_state.max_pins ->
 			    % Strike - toppled all the pins
-			    ThisShotStatus = strike,
 			    % No more shots in this frame - advance to next
-			    NextFrame = Frame + 1,
-			    NextShot = 1,
-			    NextMaxPins = 10;
+			    State#game_state{
+			      frame = State#game_state.frame + 1, shot = 1, 
+			      last_shot = strike, 
+			      prior_to_last_shot = State#game_state.last_shot, 
+			      max_pins = 10, 
+			      score = NextScore};
 			true ->
-			    ThisShotStatus = normal,
-			    NextFrame = Frame,
-			    NextShot = 2,
-			    NextMaxPins = 10 - Pins
+			    State#game_state{
+			      shot = 2, 
+			      last_shot = normal, 
+			      prior_to_last_shot = State#game_state.last_shot, 
+			      max_pins = 10 - Pins, 
+			      score = NextScore}
 		    end;
 		2 ->
-		    NextFrame = Frame + 1,
-		    NextShot = 1,
-		    % Since the frame is being advanced, pins go back to 10
-		    NextMaxPins = 10,
 		    ThisShotStatus = 
-			case Pins of
-			    MaxPins -> spare;
-			    _ -> normal
-			end
+			case Pins =:= State#game_state.max_pins of
+			    true -> spare;
+			    false -> normal
+			end,
+		    State#game_state{
+		      frame = State#game_state.frame + 1, shot = 1, 
+		      last_shot = ThisShotStatus, 
+		      prior_to_last_shot = State#game_state.last_shot, 
+		      max_pins = 10, 
+		      score = NextScore}
 	    end
-    end,
-    {NextFrame, NextShot, ThisShotStatus, NextMaxPins, NextBonusShot}.
+    end.
     
-loop({PlayerName, Frame, Shot, BonusShot, LastShot, PriorToLastShot, MaxPins, Score}=State) ->
+loop(State) ->
     % The next line is only temporary. Will be removed later
     io:format("Looping. State:~p.~n",[State]),
     receive
 	% Handle stop message if received
 	{From, stop} ->
-            From ! {message, {PlayerName, {status, stopped}, {score, Score}}},
+            From ! {message, {game_stopped, State, State#game_state.score}},
+	    % Terminate this process
+	    % Note the absence of call to loop/1
 	    ok;
 	% Handle score pins message
-	{From, {pins, Pins}} when Pins >= 0 andalso Pins =< MaxPins ->
-	    Addition = compute_addition(Pins, LastShot, PriorToLastShot,BonusShot),
+	{From, {pins, Pins}} when Pins >= 0 andalso Pins =< State#game_state.max_pins ->
+	    Addition = compute_addition(Pins, 
+					State#game_state.last_shot,
+					State#game_state.prior_to_last_shot,
+					State#game_state.bonus_shot),
 	    % Compute the addition to the score
-            NextScore = Score + Addition,
+            NextScore = State#game_state.score + Addition,
 	    % Compute ShotStatus, NextFrame, NextShot, NextMaxPins
-	    {NextFrame, NextShot, ThisShotStatus, NextMaxPins, NextBonusShot} =
-		compute_status(Pins, Frame, Shot, BonusShot, MaxPins, LastShot),
-	    NextState = {PlayerName,
-			 NextFrame,
-			 NextShot,
-			 NextBonusShot,
-			 ThisShotStatus,
-			 LastShot,
-			 NextMaxPins,
-			 NextScore},
-	    % Send Message to controller
-	    From ! {message, PlayerName, {scored, Pins, Addition}, NextState},
-	    loop(NextState);
+
+	    Val = compute_status(State, Pins, NextScore),
+	    case Val of
+	    	#game_state{} = NextState -> 
+	    	    % Send Message to controller
+	    	    From ! {message, 
+	    		    {game_progressed, NextState, NextState#game_state.score}},
+	    	    loop(NextState);
+	    	{game_over, NextState}  ->
+	    	    From ! {message, {game_over, NextState}},
+		    io:format("Game over with : ~p~n",[NextState]),
+		    % Get out .. no more looping
+	    	    ok
+	    end;
 	{From, {pins, Pins}} ->
 	    % this is an invalid input. So just ignore it
 	    From ! {message, {ignored_score, Pins}, State},
