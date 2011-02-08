@@ -1,5 +1,5 @@
 -module(player_game).
--export([start/1,stop/1,score/2,init/1]).
+-export([start/1,stop/1,score/2,init/1, get_state/1]).
 
 -author('Dhananjay Nene').
 
@@ -31,6 +31,18 @@ stop(Pid) ->
     Pid ! {self(), stop},
     ok.
 
+%%----------------------------------------------------------------- 
+%% API to get current status
+%%----------------------------------------------------------------- 
+
+get_state(Pid) ->
+    Pid ! {self(), get_state},
+    receive
+	{current_state, State} -> State;
+	Unexpected ->
+	    io:format("Received unexpected ~p~n",[Unexpected]),
+	    error
+    end.
 %%----------------------------------------------------------------- 
 %% API to add score to player game
 %%----------------------------------------------------------------- 
@@ -199,10 +211,14 @@ loop(State) ->
     receive
 	% Handle stop message if received
 	{From, stop} ->
-            From ! {message, {game_stopped, State, State#game_state.score}},
+            From ! {game_stopped, State, State#game_state.score},
 	    % Terminate this process
 	    % Note the absence of call to loop/1
 	    ok;
+	% Handle stop message if received
+	{From, get_state} ->
+            From ! {current_state, State},
+	    loop(State);
 	% Handle score pins message
 	{From, {pins, Pins}} when Pins >= 0 andalso Pins =< State#game_state.max_pins ->
 	    Addition = compute_addition(Pins, 
@@ -217,21 +233,20 @@ loop(State) ->
 	    case Val of
 	    	#game_state{} = NextState -> 
 	    	    % Send Message to controller
-	    	    From ! {message, 
-	    		    {game_progressed, NextState, NextState#game_state.score}},
+	    	    From ! {game_progressed, NextState, NextState#game_state.score},
 	    	    loop(NextState);
 	    	{game_over, NextState}  ->
-	    	    From ! {message, {game_over, NextState}},
+	    	    From ! {game_over, NextState},
 		    io:format("Game over with : ~p~n",[NextState]),
 		    % Get out .. no more looping
 	    	    ok
 	    end;
 	{From, {pins, Pins}} ->
 	    % this is an invalid input. So just ignore it
-	    From ! {message, {ignored_score, Pins}, State},
+	    From ! {ignored_score, Pins, State},
 	    loop(State);
 	{From, UnknownMessage} ->
-	    From ! {message, {ignored_message, UnknownMessage}, State},
+	    From ! {ignored_message, UnknownMessage, State},
 	    loop(State);
 	UnknownMessage ->
 	    io:format("Unknown message. ignoring. ~n~p~n",[UnknownMessage]),
