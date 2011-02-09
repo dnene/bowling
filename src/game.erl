@@ -44,7 +44,7 @@ loop(PlayerGames, Game, PlayerState, RemainingPlayerGames,PlayerPerformances) ->
 	{ok, [Value]} ->
 	    player_game:score(Game,Value),
 	    receive
-		{game_progressed, #game_state{} = NextState,_} ->
+		{_From, {game_progressed, #game_state{} = NextState,_}} ->
 		    io:format("Player ~p score is now ~p~n",
 			      [NextState#game_state.player_name,
 			       NextState#game_state.score]),
@@ -61,7 +61,7 @@ loop(PlayerGames, Game, PlayerState, RemainingPlayerGames,PlayerPerformances) ->
 			    loop(PlayerGames, Game, NextState, RemainingPlayerGames,
 				 PlayerPerformances)
                     end;
-		{game_over,#game_state{} = NextState} ->
+		{_From, {game_over,#game_state{} = NextState}} ->
 		    io:format("Game over for player ~p with score ~p~n",
 			      [NextState#game_state.player_name,
 			       NextState#game_state.score]),

@@ -28,7 +28,7 @@ stop(Pid) ->
 get_state(Pid) ->
     Pid ! {self(), get_state},
     receive
-	{current_state, State} -> State;
+	{_From, {current_state, State}} -> State;
 	Unexpected ->
 	    io:format("Received unexpected ~p~n",[Unexpected]),
 	    error
@@ -199,13 +199,13 @@ loop(State) ->
     receive
 	% Handle stop message if received
 	{From, stop} ->
-            From ! {game_stopped, State, State#game_state.score},
+            From ! {self(), {game_stopped, State, State#game_state.score}},
 	    % Terminate this process
 	    % Note the absence of call to loop/1
 	    ok;
 	% Handle stop message if received
 	{From, get_state} ->
-            From ! {current_state, State},
+            From ! {self(), {current_state, State}},
 	    loop(State);
 	% Handle score pins message
 	{From, {pins, Pins}} when Pins >= 0 andalso Pins =< State#game_state.max_pins ->
@@ -221,20 +221,21 @@ loop(State) ->
 	    case Val of
 	    	#game_state{} = NextState -> 
 	    	    % Send Message to controller
-	    	    From ! {game_progressed, NextState, NextState#game_state.score},
+	    	    From ! {self(), 
+			    {game_progressed, NextState, NextState#game_state.score}},
 	    	    loop(NextState);
 	    	{game_over, NextState}  ->
-	    	    From ! {game_over, NextState},
+	    	    From ! {self(), {game_over, NextState}},
 		    io:format("Game over with : ~p~n",[NextState]),
 		    % Get out .. no more looping
 	    	    ok
 	    end;
 	{From, {pins, Pins}} ->
 	    % this is an invalid input. So just ignore it
-	    From ! {ignored_score, Pins, State},
+	    From ! {self(), {ignored_score, Pins, State}},
 	    loop(State);
 	{From, UnknownMessage} ->
-	    From ! {ignored_message, UnknownMessage, State},
+	    From ! {self(), {ignored_message, UnknownMessage, State}},
 	    loop(State);
 	UnknownMessage ->
 	    io:format("Unknown message. ignoring. ~n~p~n",[UnknownMessage]),
