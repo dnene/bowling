@@ -1,6 +1,7 @@
 -module(player_game).
--export([start/1,stop/1,score/2,init/1, get_state/1]).
-
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([start/1,stop/1,score/2,get_state/1]).
+-behaviour(gen_server)
 -author('Dhananjay Nene').
 
 -include("../include/game_state.hrl").
@@ -10,8 +11,7 @@
 %%----------------------------------------------------------------- 
 
 start(PlayerName) ->
-    Pid = spawn(?MODULE, init, [PlayerName]),
-    Pid.
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [PlayerName], []).
 
 %%----------------------------------------------------------------- 
 %% API to stop the game for a particular player
@@ -56,6 +56,20 @@ init(PlayerName) ->
 	   prior_to_last_shot = normal,
 	   max_pins           = 10,
            score              =0}).
+
+%%----------------------------------------------------------------- 
+%% Terminate behaviour
+%%----------------------------------------------------------------- 
+
+terminate(_Reason, _State) ->
+    ok.
+
+%%----------------------------------------------------------------- 
+%% Code change behaviour
+%%----------------------------------------------------------------- 
+
+code_change(_OldVersion, State, _Extra) ->
+     {ok, State}
 
 %%----------------------------------------------------------------- 
 %% Loop to continuously receive messages about player performance
