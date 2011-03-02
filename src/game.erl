@@ -2,7 +2,7 @@
 -export([start/1, score/1, stop/1]).
 -export([init/1]).
 -author('Dhananjay Nene').
-
+-behaviour(application).
 -include("../include/game_state.hrl").
 
 %%----------------------------------------------------------------- 
@@ -10,13 +10,12 @@
 %%----------------------------------------------------------------- 
 
 start(PlayerNames) ->
-    spawn(?MODULE, init, [PlayerNames]).
-    
+    gen_server:start_link({local,?MODULE}, ?MODULE, [PlayerName], []).
 
 %%----------------------------------------------------------------- 
 %% Initialisation
 %%----------------------------------------------------------------- 
-init(PlayerNames) ->
+init([PlayerNames]) ->
     io:format("Into init~n",[]),
     PlayerGames = [{PlayerName, player_game:start(PlayerName)} ||
 		      PlayerName <- PlayerNames],

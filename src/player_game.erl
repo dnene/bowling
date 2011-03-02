@@ -1,7 +1,7 @@
 -module(player_game).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start/1,stop/1,score/2,get_state/1]).
--behaviour(gen_server)
+-export([start_link/1,stop/1,score/2,get_state/1]).
+-behaviour(gen_server).
 -author('Dhananjay Nene').
 
 -include("../include/game_state.hrl").
@@ -10,7 +10,7 @@
 %% Function to start the game for a particular player
 %%----------------------------------------------------------------- 
 
-start(PlayerName) ->
+start_link(PlayerName) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [PlayerName], []).
 
 %%----------------------------------------------------------------- 
@@ -26,20 +26,14 @@ stop(Pid) ->
 %%----------------------------------------------------------------- 
 
 get_state(Pid) ->
-    Pid ! {self(), get_state},
-    receive
-	{_From, {current_state, State}} -> State;
-	Unexpected ->
-	    io:format("Received unexpected ~p~n",[Unexpected]),
-	    error
-    end.
+    gen_server:call(Pid, get_state).
+
 %%----------------------------------------------------------------- 
 %% API to add score to player game
 %%----------------------------------------------------------------- 
 
 score(Pid,Pins) ->
-    Pid ! {self(), {pins, Pins}},
-    ok.
+    gen_server:call(Pid,{pins,Pins}).
 
 
 %%----------------------------------------------------------------- 
@@ -47,7 +41,7 @@ score(Pid,Pins) ->
 %%----------------------------------------------------------------- 
 
 init(PlayerName) ->
-    loop(#game_state{
+    {ok, #game_state{
 	   player_name        = PlayerName,
 	   frame              = 1,
 	   shot               = 1,
@@ -55,7 +49,7 @@ init(PlayerName) ->
 	   last_shot          = normal,
 	   prior_to_last_shot = normal,
 	   max_pins           = 10,
-           score              =0}).
+           score              =0}}.
 
 %%----------------------------------------------------------------- 
 %% Terminate behaviour
@@ -69,10 +63,10 @@ terminate(_Reason, _State) ->
 %%----------------------------------------------------------------- 
 
 code_change(_OldVersion, State, _Extra) ->
-     {ok, State}
+     {ok, State}.
 
 %%----------------------------------------------------------------- 
-%% Loop to continuously receive messages about player performance
+%% Compute the exact addition to the player's score
 %%----------------------------------------------------------------- 
 
 compute_addition(Pins, LastShot, PriorToLastShot, BonusShot) ->
@@ -94,10 +88,14 @@ compute_addition(Pins, LastShot, PriorToLastShot, BonusShot) ->
       end
     ) * Pins.
 
+%%----------------------------------------------------------------- 
+%% Given the particular pins being toppled, compute the next state
+%%----------------------------------------------------------------- 
+
 compute_status(State, Pins, NextScore) ->    
     case State#game_state.frame of
 	% Special treatment required for last (tenth) frame when the player
-	% can under specific conditions have 3 shots
+	% can under   specific conditions have 3 shots
 	10 -> 
 	    case State#game_state.shot of
 		% First shot
@@ -208,51 +206,54 @@ compute_status(State, Pins, NextScore) ->
 		      score = NextScore}
 	    end
     end.
-    
-loop(State) ->
-    receive
-	% Handle stop message if received
-	{From, stop} ->
-            From ! {self(), {game_stopped, State, State#game_state.score}},
-	    % Terminate this process
-	    % Note the absence of call to loop/1
-	    ok;
-	% Handle stop message if received
-	{From, get_state} ->
-            From ! {self(), {current_state, State}},
-	    loop(State);
-	% Handle score pins message
-	{From, {pins, Pins}} when Pins >= 0 andalso Pins =< State#game_state.max_pins ->
-	    Addition = compute_addition(Pins, 
-					State#game_state.last_shot,
-					State#game_state.prior_to_last_shot,
-					State#game_state.bonus_shot),
-	    % Compute the addition to the score
-            NextScore = State#game_state.score + Addition,
-	    % Compute ShotStatus, NextFrame, NextShot, NextMaxPins
 
+%%----------------------------------------------------------------- 
+%% Handle request to get state
+%%----------------------------------------------------------------- 
+
+handle_call({get_state},_From, State) -> {reply, State, State};
+
+%%----------------------------------------------------------------- 
+%% Handle the call to score based on pins being toppled
+%%----------------------------------------------------------------- 
+
+handle_call({pins, Pins}, _From, State) when Pins >= 0 andalso Pins =< State#game_state.max_pins ->
+    Addition = compute_addition(Pins, 
+				State#game_state.last_shot,
+				State#game_state.prior_to_last_shot,
+				State#game_state.bonus_shot),
+    % Compute the addition to the score
+           NextScore = State#game_state.score + Addition,
+    % Compute ShotStatus, NextFrame, NextShot, NextMaxPins
 	    Val = compute_status(State, Pins, NextScore),
-	    case Val of
-	    	#game_state{} = NextState -> 
-	    	    % Send Message to controller
-	    	    From ! {self(), 
-			    {game_progressed, NextState, NextState#game_state.score}},
-	    	    loop(NextState);
-	    	{game_over, NextState}  ->
-	    	    From ! {self(), {game_over, NextState}},
-		    io:format("Game over with : ~p~n",[NextState]),
-		    % Get out .. no more looping
-	    	    ok
-	    end;
-	{From, {pins, Pins}} ->
-	    % this is an invalid input. So just ignore it
-	    From ! {self(), {ignored_score, Pins, State}},
-	    loop(State);
-	{From, UnknownMessage} ->
-	    From ! {self(), {ignored_message, UnknownMessage, State}},
-	    loop(State);
-	UnknownMessage ->
-	    io:format("Unknown message. ignoring. ~n~p~n",[UnknownMessage]),
-	    loop(State)
-    end.
+    case Val of
+    	#game_state{} = NextState -> 
+    	    % Send Message to controller
+    	    Reply = {game_progressed, NextState, NextState#game_state.score};
+    	{game_over, NextState}  ->
+    	    Reply = {game_over, NextState},
+	    io:format("Game over with : ~p~n",[NextState])
+    end,
+    {reply, Reply, NextState};
+handle_call({pins,_Pins},_From,_State) ->
+    {error, invalid}.
 
+
+%%----------------------------------------------------------------- 
+%% Handle casts. Currently none anticipated.
+%%----------------------------------------------------------------- 
+
+handle_cast(fail, State) ->
+    1/0,
+    {noreply, State};
+handle_cast(Request, State) ->
+    io:format("Received a cast ~w~n",[Request]),
+    {noreply, State}.
+
+%%----------------------------------------------------------------- 
+%% Handle info messages. Currently none planned.
+%%----------------------------------------------------------------- 
+
+handle_info(Info, State) ->
+    io:format("Received a info ~w~n",[Info]),
+    {noreply, State}.
