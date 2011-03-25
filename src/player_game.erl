@@ -1,5 +1,5 @@
 -module(player_game).
--export([create/1, play/2, get_score/1, at_turn_begin/1]).
+-export([create/1, play/3, get_summary/1]).
 -author('Dhananjay Nene').
 
 %%-------------------------------------------------------------
@@ -179,34 +179,43 @@ compute_status(State, Pins, NextScore) ->
 %% Handle the call to score based on pins being toppled
 %%----------------------------------------------------------------- 
 
-play(Pins, State) when Pins >= 0 andalso Pins =< State#game_state.max_pins ->
+play(PlayerName, Pins, State) 
+  when PlayerName == State#game_state.player_name 
+       andalso Pins >= 0
+       andalso Pins =< State#game_state.max_pins ->
     Addition = compute_addition(Pins, 
 				State#game_state.last_shot,
 				State#game_state.prior_to_last_shot,
 				State#game_state.bonus_shot),
     % Compute the addition to the score
-           NextScore = State#game_state.score + Addition,
+    NextScore = State#game_state.score + Addition,
     % Compute ShotStatus, NextFrame, NextShot, NextMaxPins
-	    compute_status(State, Pins, NextScore);
-play(Pins,State) ->
-    {invalid_input, 
-     Pins, 
+    case compute_status(State, Pins, NextScore) of 
+	{PlayStatus,NextState} ->
+	    {PlayStatus,{Addition,
+			 NextScore,
+			 NextState#game_state.shot,
+			 NextState#game_state.max_pins},
+	     NextState};
+	_ -> {error, "Unknown error"}
+    end;
+
+play(PlayerName, _, State) when PlayerName =/= State#game_state.player_name ->
+    {error,  
+     io_lib:format("It is player ~w's turn to play. ~n",
+		   [State#game_state.player_name])};
+
+play(_, _, State) ->
+    {error,  
      io_lib:format("Pins must be less than or equal to ~p",
-		  [State#game_state.max_pins]),
-     State}.
+		   [State#game_state.max_pins])}.
 
+%%-------------------------------------------------------------
+%% helper getter methods
+%%-------------------------------------------------------------
 
-%%----------------------------------------------------------------- 
-%% Get the current score
-%%----------------------------------------------------------------- 
-
-get_score(State) ->
-    State#game_state.score.
-
-%%----------------------------------------------------------------- 
-%% Is the player at the beginning of a frame?
-%%----------------------------------------------------------------- 
-
-at_turn_begin(State) ->
-    State#game_state.shot =:= 1.
-
+get_summary(PlayerState) ->
+    {PlayerState#game_state.player_name,
+     PlayerState#game_state.frame,
+     PlayerState#game_state.shot,
+     PlayerState#game_state.score}.
