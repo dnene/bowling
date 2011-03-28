@@ -1,5 +1,5 @@
 -module(game).
--export([start/2, play/3, show_scores/1]).
+-export([start/2, play/3, show_scores/1, stop/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -author('Dhananjay Nene').
 -behaviour(gen_server).
@@ -10,6 +10,9 @@
 
 start(Lane, PlayerNames) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE,[Lane, PlayerNames],[]).
+
+stop() ->
+    gen_server:cast(?MODULE, stop).
 
 play(Pid, PlayerName, Pins) ->
     gen_server:call(Pid, {play, PlayerName, Pins}).
@@ -30,6 +33,9 @@ terminate(_Reason, _State) ->
 handle_info(_Message,State) ->
     {noreply, State}.
 
+handle_cast(stop, State) ->
+    {stop, normal, State};
+
 handle_cast(_Message,State) ->
     {noreply, State}.
 
@@ -38,7 +44,7 @@ handle_cast(_Message,State) ->
 %%----------------------------------------------------------------- 
 init([Lane, PlayerNames]) ->
     io:format("Into init~n",[]),
-    PlayerGames = [{PlayerName, player:start(PlayerName)} ||
+    PlayerGames = [{PlayerName, player:create(PlayerName)} ||
 		      PlayerName <- PlayerNames],
     io:format("~p~n",[PlayerGames]),
     %% State maintained is
@@ -47,16 +53,22 @@ init([Lane, PlayerNames]) ->
     %%   List of All Player Games (including those completed) 
     {ok, {Lane, [],PlayerGames,[]}}.
 
-handle_call({play, PlayerName, Pins}, _From, State) ->
-    case process_score({PlayerName, Pins}, State) of 
+handle_call({play, PlayerName, Pins}, _From, GameState) ->
+    case process_score({PlayerName, Pins}, GameState) of 
 	{ok, Response, NewState} ->
 	    {reply, Response, NewState};
-	{game_over, State} ->
-	    {reply, game_over,State};
-	_ -> {reply, {error, "Unknown error"}, State}
+	{game_over, NewState} ->
+	    {reply, game_over,NewState};
+	_ -> {reply, {error, "Unknown error"}, GameState}
     end;
-handle_call({show_scores}, _From, {_,Over,Pending,GOver}) ->
-    [{Name, Score} || {Name, _, _, Score} <- [player:get_summary(X) || X <- lists:append(Over,Pending,GOver)]].
+handle_call({show_scores}, _From, {_,Over,Pending,GOver}=State) ->
+    {reply,
+     lists:sort(fun({_,S1}, {_,S2})-> S1 >= S2 end,
+		[{Name, Score} || 
+		    {Name, _, _, Score} <- 
+			[player:get_summary(X) || 
+			    {_,X} <- lists:append([Over,Pending,GOver])]]),
+    State}.
 
     
 %%----------------------------------------------------------------- 
@@ -75,22 +87,32 @@ process_score({PlayerName,Pins}, {Lane,TurnOver,[],GameOver}) ->
 
 %%----------------------------------------------------------------- 
 %%----------------------------------------------------------------- 
-process_score({PlayerName,Pins}, {Lane,TurnOver,[PlayerState|PendingPlayers]=AllPendingPlayers,GameOver}) ->
+process_score({PlayerName,Pins}, {Lane,TurnOver,[{PlayerName,PlayerState}|PendingPlayers]=AllPendingPlayers,GameOver}) ->
+    io:format("State is ~p~n",[PlayerState]),
     case player:play(PlayerName, Pins, PlayerState) of 
-	{turn_over, Response, NextState} ->
+	{turn_over, Response, NewPlayerState} ->
 	    % Turn over for current player
-	    {ok,
-	     Response,
-	     {Lane,[NextState|TurnOver], PendingPlayers, GameOver}};
-	{turn_continue, Response, NextState} ->
+	    {{_,NextPlayerState}, NextState} = rearrange_state(Lane,
+			     [{PlayerName,NewPlayerState}|TurnOver], 
+			     PendingPlayers, 
+			     GameOver),
+	    {ok, {Response,player:get_summary(NextPlayerState)}, NextState};
+	{turn_continue, Response, NewPlayerState} ->
 	    % Turn continues for the current player
-	    {ok, Response,
-	     {Lane,TurnOver,[NextState|PendingPlayers],GameOver}};
-	{game_over, Response, NextState} ->
+	    {ok, {Response,player:get_summary(NewPlayerState)},
+	     {Lane,TurnOver,[{PlayerName,NewPlayerState}|PendingPlayers],GameOver}};
+	{game_over, Response, NewPlayerState} ->
 	    % Game over for the current player
 	    % TODO : detect is the total game over?
-	    {ok, Response,
-	     {Lane,TurnOver, PendingPlayers, [NextState|GameOver]}};
+	    case rearrange_state(Lane,
+				 TurnOver, 
+				 PendingPlayers, 
+				 [{PlayerName,NewPlayerState}|GameOver]) of
+		{{_,NextPlayerState}, NextState} ->
+		    {ok, {Response, player:get_summary(NextPlayerState)}, NextState};
+		{none, NextState} ->
+		    {ok, {Response, none}, NextState}
+	    end;
 	{error, Reason} ->
 	    {error, {reason, Reason},
 	     {Lane,TurnOver,AllPendingPlayers,GameOver}};
@@ -98,4 +120,14 @@ process_score({PlayerName,Pins}, {Lane,TurnOver,[PlayerState|PendingPlayers]=All
 	    {error, "unknown error", 
 	     {Lane, TurnOver,AllPendingPlayers,GameOver}}
     end.
+
+
+rearrange_state(Lane, [],[],GameOver) ->
+    {none, {Lane,[],[],GameOver}};
+rearrange_state(Lane, TurnOver, [], GameOver) ->
+    NewPending = lists:reverse(TurnOver),
+    [Next|_] = NewPending,
+    {Next, {Lane,[], NewPending,GameOver}};
+rearrange_state(Lane, TurnOver, [Next|_]=Pending, GameOver) ->
+    {Next, {Lane, TurnOver,Pending,GameOver}}.
 

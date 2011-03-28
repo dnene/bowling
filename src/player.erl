@@ -194,6 +194,7 @@ play(PlayerName, Pins, State)
 	{PlayStatus,NextState} ->
 	    {PlayStatus,{Addition,
 			 NextScore,
+			 NextState#player_state.frame,
 			 NextState#player_state.shot,
 			 NextState#player_state.max_pins},
 	     NextState};
