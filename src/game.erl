@@ -1,5 +1,5 @@
 -module(game).
--export([start/2, play/3, show_scores/1, stop/0]).
+-export([start_link/2, play/3, show_scores/1, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -author('Dhananjay Nene').
 -behaviour(gen_server).
@@ -8,11 +8,11 @@
 %% Starts a new game. Requires list of player names
 %%----------------------------------------------------------------- 
 
-start(Lane, PlayerNames) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE,[Lane, PlayerNames],[]).
+start_link(Lane, PlayerNames) ->
+    gen_server:start_link({local, list_to_atom(Lane)}, ?MODULE,[Lane, PlayerNames],[]).
 
-stop() ->
-    gen_server:cast(?MODULE, stop).
+stop(Lane) ->
+    gen_server:cast(list_to_atom(Lane), stop).
 
 play(Pid, PlayerName, Pins) ->
     gen_server:call(Pid, {play, PlayerName, Pins}).

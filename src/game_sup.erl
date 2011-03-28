@@ -3,19 +3,18 @@
 -export([init/1]).
 -behaviour(supervisor).
 -author('Dhananjay Nene').
--define(SERVER,?MODULE).
 
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE,[]).
+    supervisor:start_link({local, ?MODULE}, ?MODULE,[]).
 
 start_child(Lane, PlayerNames) ->
-    supervisor:start_child(?SERVER,[Lane,PlayerNames]).
+    supervisor:start_child(?MODULE,[Lane,PlayerNames]).
 
 init([]) ->
     {ok, {{simple_one_for_one, 1, 60},   % {RestartStrategy, MaxR, MaxT}
     	  [{game,                                    % id
     	   {game, start_link, []},                   % StartFunc
-    	   temporary,                                % Restart
+    	   permanent,                                % Restart
     	   brutal_kill,                              % Shutdown
     	   worker,                                   % Type
     	   [game]                                    % Module
