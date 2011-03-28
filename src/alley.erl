@@ -1,5 +1,5 @@
 -module(alley).
--export([start/1, start_game/1, show_status/0]).
+-export([start_link/1, start_game/1, show_status/0]).
 -export([init/1, terminate/2, code_change/3,
 	 handle_call/3, handle_cast/2, handle_info/2]).
 -author('Dhananjay Nene'). 
@@ -9,7 +9,7 @@
 %% Start the alley
 %%----------------------------------------------------------------- 
 
-start(LaneCount)->
+start_link(LaneCount)->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [LaneCount],[]).
 
 %%----------------------------------------------------------------- 
@@ -49,7 +49,7 @@ handle_call({start_game, _}, _From, {[],_LanesInUse} = State) ->
     {reply, {error, "No free Lanes"}, State};
 
 handle_call({start_game, PlayerNames}, _From, {[UsableLane|OtherLanes],LanesInUse}) ->
-    {ok,Pid} = game:start(UsableLane, PlayerNames),
+    {ok,Pid} = game_sup:start_child(UsableLane, PlayerNames),
     {reply, {started, Pid, UsableLane}, {OtherLanes,[{UsableLane,PlayerNames,Pid}|LanesInUse]}};
 
 handle_call({show_status}, _From, {_,LanesInUse} = State) ->
