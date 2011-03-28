@@ -1,11 +1,11 @@
--module(player_game).
+-module(player).
 -export([create/1, play/3, get_summary/1]).
 -author('Dhananjay Nene').
 
 %%-------------------------------------------------------------
 %% Record that contains the current game state for a player
 %%-------------------------------------------------------------
--record(game_state, 
+-record(player_state, 
 	{
 	  player_name,
 	  frame,
@@ -23,7 +23,7 @@
 %%----------------------------------------------------------------- 
 
 create(PlayerName) ->
-    #game_state{
+    #player_state{
 	   player_name        = PlayerName,
 	   frame              = 1,
 	   shot               = 1,
@@ -61,33 +61,33 @@ compute_addition(Pins, LastShot, PriorToLastShot, BonusShot) ->
 %%----------------------------------------------------------------- 
 
 compute_status(State, Pins, NextScore) ->    
-    case State#game_state.frame of
+    case State#player_state.frame of
 	% Special treatment required for last (tenth) frame when the player
 	% can under   specific conditions have 3 shots
 	10 -> 
-	    case State#game_state.shot of
+	    case State#player_state.shot of
 		% First shot
 		1 ->
 		    if
 			% Toppled all the pins
-			Pins =:= State#game_state.max_pins ->
-			    {turn_continue, State#game_state{
+			Pins =:= State#player_state.max_pins ->
+			    {turn_continue, State#player_state{
 			      shot = 2, bonus_shot = true, last_shot = strike, 
-			      prior_to_last_shot = State#game_state.last_shot, 
+			      prior_to_last_shot = State#player_state.last_shot, 
 			      max_pins = 10, score = NextScore}};
 			% Toppled some or zero pins
 			true ->
-			    {turn_continue, State#game_state{
+			    {turn_continue, State#player_state{
 			      shot = 2, last_shot = normal, 
-			      prior_to_last_shot = State#game_state.last_shot, 
+			      prior_to_last_shot = State#player_state.last_shot, 
 			      max_pins = 10 - Pins, score = NextScore}}
 		    end;
 		% Second shot
 		2 ->
 		    if
 			% Toppled all the pins
-			Pins =:= State#game_state.max_pins ->
-			    case State#game_state.bonus_shot of 
+			Pins =:= State#player_state.max_pins ->
+			    case State#player_state.bonus_shot of 
 				false ->ThisShotStatus = spare;
 				% if this is a bonus shot, then no subsequent
 				% bonuses can accrue so it should not be marked
@@ -96,25 +96,25 @@ compute_status(State, Pins, NextScore) ->
 			    end,
 			    % Have to award one more shot in this frame since
 			    % player had a spare
-			    {turn_continue, State#game_state{
+			    {turn_continue, State#player_state{
 			      shot = 3, bonus_shot = true, 
 			      last_shot = ThisShotStatus, 
-			      prior_to_last_shot = State#game_state.last_shot, 
+			      prior_to_last_shot = State#player_state.last_shot, 
 			      max_pins = 10, score = NextScore}};
 			% Toppled some or zero pins but first shot was a strike
-			State#game_state.last_shot =:= strike ->
+			State#player_state.last_shot =:= strike ->
 			    % Have to award one more shot in this frame since
 			    % player had a strike earlier
-			    {turn_continue, State#game_state{
+			    {turn_continue, State#player_state{
 			      shot = 3, bonus_shot = true, 
 			      last_shot = normal, 
-			      prior_to_last_shot = State#game_state.last_shot, 
-			      max_pins = State#game_state.max_pins - Pins, 
+			      prior_to_last_shot = State#player_state.last_shot, 
+			      max_pins = State#player_state.max_pins - Pins, 
 			      score = NextScore}};
 			% Toppled some or zero pins and first shot was not a strike
 			true ->
 			    {game_over, 
-			     State#game_state{
+			     State#player_state{
 			       frame = none,
 			       shot = none,
 			       bonus_shot = none,
@@ -127,7 +127,7 @@ compute_status(State, Pins, NextScore) ->
 		% Third shot (under scenarios of strike or spare)
 		3 ->
 		    {game_over, 
-		     State#game_state{
+		     State#player_state{
 		       frame = none,
 		       shot = none,
 		       bonus_shot = none,
@@ -140,36 +140,36 @@ compute_status(State, Pins, NextScore) ->
 	% For all but the last frame
 	_ ->
 	    % Bonus shots are applicable only in the last frame .. so always false
-	    case State#game_state.shot of
+	    case State#player_state.shot of
 		1 ->
 		    if 
-			Pins =:= State#game_state.max_pins ->
+			Pins =:= State#player_state.max_pins ->
 			    % Strike - toppled all the pins
 			    % No more shots in this frame - advance to next
-			    {turn_over, State#game_state{
-			      frame = State#game_state.frame + 1, shot = 1, 
+			    {turn_over, State#player_state{
+			      frame = State#player_state.frame + 1, shot = 1, 
 			      last_shot = strike, 
-			      prior_to_last_shot = State#game_state.last_shot, 
+			      prior_to_last_shot = State#player_state.last_shot, 
 			      max_pins = 10, 
 			      score = NextScore}};
 			true ->
-			    {turn_continue, State#game_state{
+			    {turn_continue, State#player_state{
 			      shot = 2, 
 			      last_shot = normal, 
-			      prior_to_last_shot = State#game_state.last_shot, 
+			      prior_to_last_shot = State#player_state.last_shot, 
 			      max_pins = 10 - Pins, 
 			      score = NextScore}}
 		    end;
 		2 ->
 		    ThisShotStatus = 
-			case Pins =:= State#game_state.max_pins of
+			case Pins =:= State#player_state.max_pins of
 			    true -> spare;
 			    false -> normal
 			end,
-		    {turn_over, State#game_state{
-		      frame = State#game_state.frame + 1, shot = 1, 
+		    {turn_over, State#player_state{
+		      frame = State#player_state.frame + 1, shot = 1, 
 		      last_shot = ThisShotStatus, 
-		      prior_to_last_shot = State#game_state.last_shot, 
+		      prior_to_last_shot = State#player_state.last_shot, 
 		      max_pins = 10, 
 		      score = NextScore}}
 	    end
@@ -180,42 +180,42 @@ compute_status(State, Pins, NextScore) ->
 %%----------------------------------------------------------------- 
 
 play(PlayerName, Pins, State) 
-  when PlayerName == State#game_state.player_name 
+  when PlayerName == State#player_state.player_name 
        andalso Pins >= 0
-       andalso Pins =< State#game_state.max_pins ->
+       andalso Pins =< State#player_state.max_pins ->
     Addition = compute_addition(Pins, 
-				State#game_state.last_shot,
-				State#game_state.prior_to_last_shot,
-				State#game_state.bonus_shot),
+				State#player_state.last_shot,
+				State#player_state.prior_to_last_shot,
+				State#player_state.bonus_shot),
     % Compute the addition to the score
-    NextScore = State#game_state.score + Addition,
+    NextScore = State#player_state.score + Addition,
     % Compute ShotStatus, NextFrame, NextShot, NextMaxPins
     case compute_status(State, Pins, NextScore) of 
 	{PlayStatus,NextState} ->
 	    {PlayStatus,{Addition,
 			 NextScore,
-			 NextState#game_state.shot,
-			 NextState#game_state.max_pins},
+			 NextState#player_state.shot,
+			 NextState#player_state.max_pins},
 	     NextState};
 	_ -> {error, "Unknown error"}
     end;
 
-play(PlayerName, _, State) when PlayerName =/= State#game_state.player_name ->
+play(PlayerName, _, State) when PlayerName =/= State#player_state.player_name ->
     {error,  
      io_lib:format("It is player ~w's turn to play. ~n",
-		   [State#game_state.player_name])};
+		   [State#player_state.player_name])};
 
 play(_, _, State) ->
     {error,  
      io_lib:format("Pins must be less than or equal to ~p",
-		   [State#game_state.max_pins])}.
+		   [State#player_state.max_pins])}.
 
 %%-------------------------------------------------------------
 %% helper getter methods
 %%-------------------------------------------------------------
 
 get_summary(PlayerState) ->
-    {PlayerState#game_state.player_name,
-     PlayerState#game_state.frame,
-     PlayerState#game_state.shot,
-     PlayerState#game_state.score}.
+    {PlayerState#player_state.player_name,
+     PlayerState#player_state.frame,
+     PlayerState#player_state.shot,
+     PlayerState#player_state.score}.

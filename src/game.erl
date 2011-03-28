@@ -38,7 +38,7 @@ handle_cast(_Message,State) ->
 %%----------------------------------------------------------------- 
 init([Lane, PlayerNames]) ->
     io:format("Into init~n",[]),
-    PlayerGames = [{PlayerName, player_game:start(PlayerName)} ||
+    PlayerGames = [{PlayerName, player:start(PlayerName)} ||
 		      PlayerName <- PlayerNames],
     io:format("~p~n",[PlayerGames]),
     %% State maintained is
@@ -56,7 +56,7 @@ handle_call({play, PlayerName, Pins}, _From, State) ->
 	_ -> {reply, {error, "Unknown error"}, State}
     end;
 handle_call({show_scores}, _From, {_,Over,Pending,GOver}) ->
-    [{Name, Score} || {Name, _, _, Score} <- [player_game:get_summary(X) || X <- lists:append(Over,Pending,GOver)]].
+    [{Name, Score} || {Name, _, _, Score} <- [player:get_summary(X) || X <- lists:append(Over,Pending,GOver)]].
 
     
 %%----------------------------------------------------------------- 
@@ -76,7 +76,7 @@ process_score({PlayerName,Pins}, {Lane,TurnOver,[],GameOver}) ->
 %%----------------------------------------------------------------- 
 %%----------------------------------------------------------------- 
 process_score({PlayerName,Pins}, {Lane,TurnOver,[PlayerState|PendingPlayers]=AllPendingPlayers,GameOver}) ->
-    case player_game:play(PlayerName, Pins, PlayerState) of 
+    case player:play(PlayerName, Pins, PlayerState) of 
 	{turn_over, Response, NextState} ->
 	    % Turn over for current player
 	    {ok,
