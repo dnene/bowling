@@ -53,6 +53,9 @@ init([Lane, PlayerNames]) ->
     %%   List of All Player Games (including those completed) 
     {ok, {Lane, [],PlayerGames,[]}}.
 
+%%----------------------------------------------------------------- 
+%% One turn (ball roll) accounting
+%%----------------------------------------------------------------- 
 handle_call({play, PlayerName, Pins}, _From, GameState) ->
     case process_score({PlayerName, Pins}, GameState) of 
 	{ok, Response, NewState} ->
@@ -61,6 +64,9 @@ handle_call({play, PlayerName, Pins}, _From, GameState) ->
 	    {reply, game_over,NewState};
 	_ -> {reply, {error, "Unknown error"}, GameState}
     end;
+%%----------------------------------------------------------------- 
+%% Get name,score in descending order of scores
+%%----------------------------------------------------------------- 
 handle_call({show_scores}, _From, {_,Over,Pending,GOver}=State) ->
     {reply,
      lists:sort(fun({_,S1}, {_,S2})-> S1 >= S2 end,
@@ -86,8 +92,13 @@ process_score({PlayerName,Pins}, {Lane,TurnOver,[],GameOver}) ->
     process_score({PlayerName,Pins}, {Lane,[],lists:reverse(TurnOver),GameOver});
 
 %%----------------------------------------------------------------- 
+%% Typical most frequent score processing function
 %%----------------------------------------------------------------- 
-process_score({PlayerName,Pins}, {Lane,TurnOver,[{PlayerName,PlayerState}|PendingPlayers]=AllPendingPlayers,GameOver}) ->
+process_score({PlayerName,Pins}, 
+	      {Lane,
+	       TurnOver,
+	       [{PlayerName,PlayerState}|PendingPlayers]=AllPendingPlayers,
+	       GameOver}) ->
     io:format("State is ~p~n",[PlayerState]),
     case player:play(PlayerName, Pins, PlayerState) of 
 	{turn_over, Response, NewPlayerState} ->
@@ -121,6 +132,14 @@ process_score({PlayerName,Pins}, {Lane,TurnOver,[{PlayerName,PlayerState}|Pendin
 	     {Lane, TurnOver,AllPendingPlayers,GameOver}}
     end.
 
+%%----------------------------------------------------------------- 
+%% Rearranging state is required primarily when the Pending list
+%% becomes empty, in which case it needs to be recreated from
+%% the TurnOver list, just so that the first element from the 
+%% Pending list can be extracted and its summary information 
+%% returned back to the caller indicating the next player who is
+%% required to take is turn and his current game state.
+%%----------------------------------------------------------------- 
 
 rearrange_state(Lane, [],[],GameOver) ->
     {none, {Lane,[],[],GameOver}};
