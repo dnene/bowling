@@ -43,7 +43,6 @@ handle_cast(_Message,State) ->
 %% Initialisation
 %%----------------------------------------------------------------- 
 init([Lane, PlayerNames]) ->
-    io:format("Into init~n",[]),
     PlayerGames = [{PlayerName, player:create(PlayerName)} ||
 		      PlayerName <- PlayerNames],
     io:format("~p~n",[PlayerGames]),
@@ -99,7 +98,6 @@ process_score({PlayerName,Pins},
 	       TurnOver,
 	       [{PlayerName,PlayerState}|PendingPlayers]=AllPendingPlayers,
 	       GameOver}) ->
-    io:format("State is ~p~n",[PlayerState]),
     case player:play(PlayerName, Pins, PlayerState) of 
 	{turn_over, Response, NewPlayerState} ->
 	    % Turn over for current player

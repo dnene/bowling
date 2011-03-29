@@ -5,7 +5,6 @@
 -author('Dhananjay Nene').
 
 start_link() ->
-    io:format("Yippee~n",[]),
     supervisor:start_link({local, ?MODULE}, ?MODULE,[]).
 
 start_child(Lane, PlayerNames) ->

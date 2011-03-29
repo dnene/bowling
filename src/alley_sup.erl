@@ -8,7 +8,6 @@ start_link(LaneCount) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE,[LaneCount]).
 
 init([LaneCount]) ->
-    io:format("Here ~w~n",[LaneCount]),
     {ok, {{one_for_one, 1, 10},                       % {RestartStrategy, MaxR, MaxT}
     	  [
 	   {game_sup,                                 % id
