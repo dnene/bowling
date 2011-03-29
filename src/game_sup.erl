@@ -5,12 +5,14 @@
 -author('Dhananjay Nene').
 
 start_link() ->
+    io:format("Yippee~n",[]),
     supervisor:start_link({local, ?MODULE}, ?MODULE,[]).
 
 start_child(Lane, PlayerNames) ->
     supervisor:start_child(?MODULE,[Lane,PlayerNames]).
 
 init([]) ->
+    io:format("Foobar! ~n",[]),
     {ok, {{simple_one_for_one, 1, 60},   % {RestartStrategy, MaxR, MaxT}
     	  [{game,                                    % id
     	   {game, start_link, []},                   % StartFunc
